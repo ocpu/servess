@@ -1,5 +1,5 @@
 import { Application } from './index.js'
-import { RouterContext } from './router.js'
+import { RouteListener, RouterContext } from './router.js'
 import { MessageContext } from './message-context.js'
 import { Server } from 'http'
 
@@ -7,6 +7,7 @@ export interface Extension {
   readonly name: string
 
   decorateMessageContext?(ctx: MessageContext): Promise<Partial<MessageContext> | void> | Partial<MessageContext> | void
+  decorateRouteListener?(ctx: RouteListener): Promise<Partial<RouteListener> | void> | Partial<RouteListener> | void
   decorateRouterContext?(ctx: RouterContext): Promise<Partial<RouterContext> | void> | Partial<RouterContext> | void
   decorateApplication?(ctx: Application): Promise<Partial<Application> | void> | Partial<Application> | void
 
