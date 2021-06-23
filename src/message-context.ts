@@ -84,6 +84,10 @@ const mimeTypeShorthands = {
   css: 'text/css',
   js: 'text/javascript',
   javascript: 'text/javascript',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpeg: 'image/jpeg',
+  jpg: 'image/jpeg',
 }
 
 export namespace MessageContext {
@@ -198,11 +202,19 @@ export namespace MessageContext {
         return ctx
       },
       setHeader(name: string, value: number | string | string[] | undefined) {
-        responseHeaders.set(name, value)
+        if (name.toLowerCase() === 'content-type' && typeof value !== 'number' && (''+value) in mimeTypeShorthands) {
+          responseHeaders.set(name, (mimeTypeShorthands as Record<string, string>)[''+value])
+        } else {
+          responseHeaders.set(name, value)
+        }
         return ctx
       },
       addHeader(name: string, value: number | string | string[] | undefined) {
-        responseHeaders.add(name, value)
+        if (name.toLowerCase() === 'content-type' && typeof value !== 'number' && (''+value) in mimeTypeShorthands) {
+          responseHeaders.add(name, (mimeTypeShorthands as Record<string, string>)[''+value])
+        } else {
+          responseHeaders.add(name, value)
+        }
         return ctx
       },
       json(json) {
