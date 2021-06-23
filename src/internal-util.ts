@@ -1,7 +1,7 @@
 import { Application } from './index.js'
 import { Extension } from './extension.js'
 import { MessageContext } from './message-context.js'
-import { RouterContext } from './router.js'
+import { RouteListener, RouterContext } from './router.js'
 
 type OmitKeysOfType<T, IncludeType> = { [K in keyof T]: T[K] extends IncludeType ? never : K }[keyof T]
 // type OnlyKeysOfType<T, ExcludeType> = { [K in keyof T]: T[K] extends ExcludeType ? K : never }[keyof T]
@@ -27,12 +27,15 @@ export async function decorateApplication(app: Application, ...extensions: Exten
 
 /** Decorate a Router with the provided extensions. */
 export async function decorateRouterContext(router: RouterContext, ...extensions: Extension[]) {
-  await doLifecycle(extensions, 'decorateRouterContext', router)
   Object.assign(router, ...(await execFunctionOnArray(extensions, 'decorateRouterContext', router)).filter(Boolean))
 }
 
 /** Decorate an Message Context with the provided extensions. */
 export async function decorateMessageContext(message: MessageContext, ...extensions: Extension[]) {
-  await doLifecycle(extensions, 'decorateMessageContext', message)
   Object.assign(message, ...(await execFunctionOnArray(extensions, 'decorateMessageContext', message)).filter(Boolean))
+}
+
+/** Decorate an Route Listener with the provided extensions. */
+export async function decorateRouteListener(listener: RouteListener, ...extensions: Extension[]) {
+  Object.assign(listener, ...(await execFunctionOnArray(extensions, 'decorateRouteListener', listener)).filter(Boolean))
 }

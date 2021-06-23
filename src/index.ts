@@ -20,6 +20,7 @@ declare global {
     interface Application {}
     interface RouterContext {}
     interface MessageContext {}
+    interface RouteListener {}
   }
 }
 

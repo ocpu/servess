@@ -1,6 +1,6 @@
 import { Extension } from './extension.js'
 import { MessageContext } from './message-context.js'
-import { decorateRouterContext } from './internal-util.js'
+import { decorateRouteListener, decorateRouterContext } from './internal-util.js'
 
 type TOrPromiseT<T> = T | Promise<T>
 export type RouteHandler = (context: MessageContext) => TOrPromiseT<Uint8Array | string | NodeJS.ReadableStream | void>
@@ -45,13 +45,49 @@ export namespace RouterHandleResponse {
 
 type Handler = (message: MessageContext) => Promise<RouterHandleResponse.AnyType>
 /** A representation of a route listener. */
-export interface RouteListener {
+export interface RouteListener extends Servess.RouteListener {
   /** Make the route listener handle a particular message context. */
   (message: MessageContext): Promise<RouterHandleResponse.AnyType>
   /** Replace the function that would handle ant incoming message context with a new one. */
-  replaceHandler(handler: RouteHandler): void
+  replaceHandler(handler: RouteHandler): RouteListener
+  /** Add a pre-condition to the listener. */
+  addPreCondition(handler: (message: MessageContext) => boolean | Promise<boolean>): RouteListener
   /** Remove this route listener from whatever parent router it is a part of. */
   detach(): void
+}
+
+namespace RouteListener {
+  export function create(pathAsRegExp: RegExp, detachFunction: () => void, extensions: Extension[]) {
+    let routeHandler: RouteHandler
+    const preConditions: ((message: MessageContext) => boolean | Promise<boolean>)[] = []
+
+    const result = wrappedRouteHandler as RouteListener
+    result.addPreCondition = handler => {
+      preConditions.push(handler)
+      return result
+    }
+    result.replaceHandler = newHandler => {
+      routeHandler = newHandler
+      return result
+    }
+    result.detach = detachFunction
+    decorateRouteListener(result, ...extensions)
+    return result
+
+    async function wrappedRouteHandler(ctx: MessageContext): Promise<RouterHandleResponse.AnyType> {
+      if (!pathAsRegExp.test(ctx.path)) return RouterHandleResponse.create(RouterHandleResponse.Type.UNHANDLED)
+      for (const preCondition of preConditions)
+        if (!await preCondition(ctx))
+          return RouterHandleResponse.create(RouterHandleResponse.Type.UNHANDLED)
+      // Since the message context "params" property is readonly we have to set in like this.
+      // Please do not handle the params in your route handlers like this.
+      // @ts-ignore
+      ctx.params = pathAsRegExp.exec(ctx.path)!.groups
+      const result = await routeHandler(ctx)
+      if (result === undefined) return RouterHandleResponse.create(RouterHandleResponse.Type.HANDLED)
+      return RouterHandleResponse.create(RouterHandleResponse.Type.RESULT, result as string | Uint8Array)
+    }
+  }
 }
 
 /** A representation of a router. */
@@ -128,26 +164,13 @@ export namespace RouterContext {
     const ctx: RouterContext = {
       prefix,
       add(method: string, path: string | RouteHandler, handler?: RouteHandler) {
-        let routeHandler = typeof path === 'string' ? handler! : path
-        const pathAsRegExp = getPathRegExp(typeof path === 'string' ? path : '')
+        const listener = ctx.any(
+          typeof path === 'string' ? path : '',
+          typeof path === 'string' ? handler! : path
+        )
         const METHOD = method.toUpperCase()
-        const result = wrappedRouteHandler as RouteListener
-        result.replaceHandler = newHandler => routeHandler = newHandler
-        result.detach = () => handlers.splice(handlers.indexOf(result))
-        handlers.push(result)
-        return result
-
-        async function wrappedRouteHandler(ctx: MessageContext): Promise<RouterHandleResponse.AnyType> {
-          if (ctx.method !== METHOD) return RouterHandleResponse.create(RouterHandleResponse.Type.UNHANDLED)
-          if (!pathAsRegExp.test(ctx.path)) return RouterHandleResponse.create(RouterHandleResponse.Type.UNHANDLED)
-          // Since the message context "params" property is readonly we have to set in like this.
-          // Please do not handle the params in your route handlers like this.
-          // @ts-ignore
-          ctx.params = pathAsRegExp.exec(ctx.path)!.groups
-          const result = await routeHandler(ctx)
-          if (result === undefined) return RouterHandleResponse.create(RouterHandleResponse.Type.HANDLED)
-          return RouterHandleResponse.create(RouterHandleResponse.Type.RESULT, result as string | Uint8Array)
-        }
+        listener.addPreCondition(ctx => ctx.method === METHOD)
+        return listener
       },
       get: (path: string | RouteHandler, handler?: RouteHandler) => typeof path === 'string' ? ctx.add('GET', path, handler!) : ctx.add('GET', '', handler as RouteHandler),
       post: (path: string | RouteHandler, handler?: RouteHandler) => typeof path === 'string' ? ctx.add('POST', path, handler!) : ctx.add('POST', '', handler as RouteHandler),
@@ -157,24 +180,11 @@ export namespace RouterContext {
       options: (path: string | RouteHandler, handler?: RouteHandler) => typeof path === 'string' ? ctx.add('OPTIONS', path, handler!) : ctx.add('OPTIONS', '', handler as RouteHandler),
       head: (path: string | RouteHandler, handler?: RouteHandler) => typeof path === 'string' ? ctx.add('HEAD', path, handler!) : ctx.add('HEAD', '', handler as RouteHandler),
       any(path: string | RouteHandler, handler?: RouteHandler) {
-        let routeHandler = typeof path === 'string' ? handler! : path
         const pathAsRegExp = getPathRegExp(typeof path === 'string' ? path : '')
-        const result = wrappedRouteHandler as RouteListener
-        result.replaceHandler = newHandler => routeHandler = newHandler
-        result.detach = () => handlers.splice(handlers.indexOf(result))
-        handlers.push(result)
-        return result
-
-        async function wrappedRouteHandler(ctx: MessageContext): Promise<RouterHandleResponse.AnyType> {
-          if (!pathAsRegExp.test(ctx.path)) return RouterHandleResponse.create(RouterHandleResponse.Type.UNHANDLED)
-          // Since the message context "params" property is readonly we have to set in like this.
-          // Please do not handle the params in your route handlers like this.
-          // @ts-ignore
-          ctx.params = pathAsRegExp.exec(ctx.path)!.groups
-          const result = await routeHandler(ctx)
-          if (result === undefined) return RouterHandleResponse.create(RouterHandleResponse.Type.HANDLED)
-          return RouterHandleResponse.create(RouterHandleResponse.Type.RESULT, result as string | Uint8Array)
-        }
+        const listener = RouteListener.create(pathAsRegExp, () => handlers.splice(handlers.indexOf(listener)), extensions)
+        listener.replaceHandler(typeof path === 'string' ? handler! : path)
+        handlers.push(listener)
+        return listener
       },
       createRouter(path: string) {
         const router = RouterContext.create(prefixPath + (path.startsWith('/') ? path.slice(1) : path), extensions)
