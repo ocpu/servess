@@ -129,7 +129,7 @@ export namespace MessageContext {
 
     const ctx: MessageContext = {
       socket: req.socket,
-      method: req.method!,
+      method: req.method!.toUpperCase(),
       url: req.url!,
       path,
       query,

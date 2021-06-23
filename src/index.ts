@@ -117,9 +117,10 @@ const getDefaultHTML500Page = (path: string, error: unknown) =>
   </head>
   <body>
     <h1>500 - Internal Server Error</h1>
+    <p>An error happened while handling the route ${path}</p>
     ${
       process.env.NODE_ENV !== 'production'
-        ? `<p>An error happened while handling the route ${path}.</p><pre>${'' + error}</pre>`
+        ? `<pre>${'' + error}</pre>`
         : ''
     }
   </body>
